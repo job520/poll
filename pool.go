@@ -1,4 +1,4 @@
-package poll
+package pool
 
 import (
 	"errors"

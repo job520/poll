@@ -1,4 +1,4 @@
-package pool
+package queue
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ type Task struct {
 	Handler func(v ...interface{})
 	Params  []interface{}
 }
-type Pool struct {
+type Queue struct {
 	capacity       uint64
 	runningWorkers uint64
 	status         int64
@@ -21,11 +21,11 @@ type Pool struct {
 	sync.Mutex
 }
 
-func NewPool(capacity uint64) (*Pool, error) {
+func NewPool(capacity uint64) (*Queue, error) {
 	if capacity <= 0 {
 		return nil, errors.New("invalid pool cap")
 	}
-	p := &Pool{
+	q := &Queue{
 		capacity: capacity,
 		status:   1,
 		chTask:   make(chan *Task, capacity),
@@ -33,58 +33,58 @@ func NewPool(capacity uint64) (*Pool, error) {
 			fmt.Println("panic recovered:", i)
 		},
 	}
-	return p, nil
+	return q, nil
 }
-func (p *Pool) checkWorker() {
-	p.Lock()
-	defer p.Unlock()
-	if p.runningWorkers == 0 && len(p.chTask) > 0 {
-		p.run()
+func (q *Queue) checkWorker() {
+	q.Lock()
+	defer q.Unlock()
+	if q.runningWorkers == 0 && len(q.chTask) > 0 {
+		q.run()
 	}
 }
-func (p *Pool) GetCap() uint64 {
-	return p.capacity
+func (q *Queue) GetCap() uint64 {
+	return q.capacity
 }
-func (p *Pool) GetRunningWorkers() uint64 {
-	return atomic.LoadUint64(&p.runningWorkers)
+func (q *Queue) GetRunningWorkers() uint64 {
+	return atomic.LoadUint64(&q.runningWorkers)
 }
-func (p *Pool) incRunning() {
-	atomic.AddUint64(&p.runningWorkers, 1)
+func (q *Queue) incRunning() {
+	atomic.AddUint64(&q.runningWorkers, 1)
 }
-func (p *Pool) decRunning() {
-	atomic.AddUint64(&p.runningWorkers, ^uint64(0))
+func (q *Queue) decRunning() {
+	atomic.AddUint64(&q.runningWorkers, ^uint64(0))
 }
-func (p *Pool) Put(task *Task) error {
-	p.Lock()
-	defer p.Unlock()
-	if p.status == 0 {
+func (q *Queue) Put(task *Task) error {
+	q.Lock()
+	defer q.Unlock()
+	if q.status == 0 {
 		return errors.New("pool already closed")
 	}
-	if p.GetRunningWorkers() < p.GetCap() {
-		p.run()
+	if q.GetRunningWorkers() < q.GetCap() {
+		q.run()
 	}
-	if p.status == 1 {
-		p.chTask <- task
+	if q.status == 1 {
+		q.chTask <- task
 	}
 	return nil
 }
-func (p *Pool) run() {
-	p.incRunning()
+func (q *Queue) run() {
+	q.incRunning()
 	go func() {
 		defer func() {
-			p.decRunning()
+			q.decRunning()
 			if r := recover(); r != nil {
-				if p.PanicHandler != nil {
-					p.PanicHandler(r)
+				if q.PanicHandler != nil {
+					q.PanicHandler(r)
 				} else {
 					fmt.Printf("Worker panic: %s\n", r)
 				}
 			}
-			p.checkWorker()
+			q.checkWorker()
 		}()
 		for {
 			select {
-			case task, ok := <-p.chTask:
+			case task, ok := <-q.chTask:
 				if !ok {
 					return
 				}
@@ -93,26 +93,26 @@ func (p *Pool) run() {
 		}
 	}()
 }
-func (p *Pool) setStatus(status int64) bool {
-	p.Lock()
-	defer p.Unlock()
-	if p.status == status {
+func (q *Queue) setStatus(status int64) bool {
+	q.Lock()
+	defer q.Unlock()
+	if q.status == status {
 		return false
 	}
-	p.status = status
+	q.status = status
 	return true
 }
-func (p *Pool) close() {
-	p.Lock()
-	defer p.Unlock()
-	close(p.chTask)
+func (q *Queue) close() {
+	q.Lock()
+	defer q.Unlock()
+	close(q.chTask)
 }
-func (p *Pool) Close() {
-	if !p.setStatus(0) {
+func (q *Queue) Close() {
+	if !q.setStatus(0) {
 		return
 	}
-	for len(p.chTask) > 0 {
+	for len(q.chTask) > 0 {
 		time.Sleep(1e6)
 	}
-	p.close()
+	q.close()
 }

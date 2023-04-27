@@ -21,9 +21,9 @@ type Queue struct {
 	sync.Mutex
 }
 
-func NewPool(capacity uint64) (*Queue, error) {
+func NewQueue(capacity uint64) (*Queue, error) {
 	if capacity <= 0 {
-		return nil, errors.New("invalid pool cap")
+		return nil, errors.New("invalid queue cap")
 	}
 	q := &Queue{
 		capacity: capacity,
@@ -58,7 +58,7 @@ func (q *Queue) Put(task *Task) error {
 	q.Lock()
 	defer q.Unlock()
 	if q.status == 0 {
-		return errors.New("pool already closed")
+		return errors.New("queue already closed")
 	}
 	if q.GetRunningWorkers() < q.GetCap() {
 		q.run()
